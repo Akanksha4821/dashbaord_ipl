@@ -14,25 +14,35 @@ st.set_page_config(page_title="IPL EDA Dashboard", layout="wide")
 # FIX: GET THE CORRECT FILE PATH NO MATTER WHERE APP RUNS
 # -------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")  # store CSVs in 'data/' folder
 
-DATA_MATCHES = os.path.join(BASE_DIR, "IPL Matches 2008-2020.csv")
-DATA_BALLS = os.path.join(BASE_DIR, "IPL Ball-by-Ball 2008-2020.csv")
+DATA_MATCHES = os.path.join(DATA_DIR, "IPL Matches 2008-2020.csv")
+DATA_BALLS = os.path.join(DATA_DIR, "IPL Ball-by-Ball 2008-2020.csv")
 
 # -------------------------------
 # LOAD DATA
 # -------------------------------
 @st.cache_data
 def load_data():
-
-    # Debug — See if files exist
+    """
+    Loads IPL Matches and Ball-by-Ball CSVs.
+    Works locally and on Streamlit deployment.
+    """
+    # Debug paths
     st.write("App running from:", BASE_DIR)
     st.write("Matches file found:", os.path.exists(DATA_MATCHES))
     st.write("Balls file found:", os.path.exists(DATA_BALLS))
 
     if not os.path.exists(DATA_MATCHES) or not os.path.exists(DATA_BALLS):
-        st.error("❌ CSV files not found in repository! Ensure BOTH files are in root folder of GitHub repo.")
+        st.error(
+            "❌ CSV files not found!\n"
+            "Ensure both CSVs are in the 'data/' folder of your repo:\n"
+            "- IPL_Matches_2008-2020.csv\n"
+            "- IPL_Ball_by_Ball_2008-2020.csv"
+        )
         st.stop()
 
+    # Load CSVs
     matches = pd.read_csv(DATA_MATCHES)
     balls = pd.read_csv(DATA_BALLS)
 
@@ -40,7 +50,7 @@ def load_data():
     matches.columns = matches.columns.str.strip()
     balls.columns = balls.columns.str.strip()
 
-    # Convert to datetime
+    # Convert date column
     if "date" in matches.columns:
         matches["date"] = pd.to_datetime(matches["date"], errors="ignore")
 
@@ -48,13 +58,14 @@ def load_data():
     if "season" not in matches.columns and "date" in matches.columns:
         matches["season"] = matches["date"].dt.year
 
-    # Add wicket column if missing
+    # Add 'is_wicket' column if missing
     if "is_wicket" not in balls.columns and "dismissal_kind" in balls.columns:
         balls["is_wicket"] = balls["dismissal_kind"].notna().astype(int)
 
     return matches, balls
 
 
+# Load data
 matches, balls = load_data()
 
 # ---------------------------------------------
