@@ -7,42 +7,49 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import urllib.request
 
 st.set_page_config(page_title="IPL EDA Dashboard", layout="wide")
 
 # -------------------------------------------------------
-# FIX: GET THE CORRECT FILE PATH NO MATTER WHERE APP RUNS
+# FILE PATHS
 # -------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")  # store CSVs in 'data/' folder
 
-DATA_MATCHES = os.path.join(DATA_DIR, "IPL Matches 2008-2020.csv")
-DATA_BALLS = os.path.join(DATA_DIR, "IPL Ball-by-Ball 2008-2020.csv")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
 
-# -------------------------------
+MATCHES_NAME = "matches.csv"
+BALLS_NAME = "ball_by_ball.csv"
+
+DATA_MATCHES = os.path.join(DATA_DIR, MATCHES_NAME)
+DATA_BALLS = os.path.join(DATA_DIR, BALLS_NAME)
+
+# -------------------------------------------------------
+# GITHUB RAW URLs
+# -------------------------------------------------------
+GITHUB_BASE = "https://raw.githubusercontent.com/Akanksha4821/dashbaord_ipl/main/data/"
+
+MATCHES_URL = GITHUB_BASE + MATCHES_NAME
+BALLS_URL = GITHUB_BASE + BALLS_NAME
+
+# -------------------------------------------------------
+# DOWNLOAD FILES IF MISSING
+# -------------------------------------------------------
+def download_if_missing(file_path, url):
+    if not os.path.exists(file_path):
+        st.info(f"Downloading {os.path.basename(file_path)} from GitHub...")
+        urllib.request.urlretrieve(url, file_path)
+    return file_path
+
+DATA_MATCHES = download_if_missing(DATA_MATCHES, MATCHES_URL)
+DATA_BALLS = download_if_missing(DATA_BALLS, BALLS_URL)
+
+# -------------------------------------------------------
 # LOAD DATA
-# -------------------------------
+# -------------------------------------------------------
 @st.cache_data
 def load_data():
-    """
-    Loads IPL Matches and Ball-by-Ball CSVs.
-    Works locally and on Streamlit deployment.
-    """
-    # Debug paths
-    st.write("App running from:", BASE_DIR)
-    st.write("Matches file found:", os.path.exists(DATA_MATCHES))
-    st.write("Balls file found:", os.path.exists(DATA_BALLS))
-
-    if not os.path.exists(DATA_MATCHES) or not os.path.exists(DATA_BALLS):
-        st.error(
-            "❌ CSV files not found!\n"
-            "Ensure both CSVs are in the 'data/' folder of your repo:\n"
-            "- IPL_Matches_2008-2020.csv\n"
-            "- IPL_Ball_by_Ball_2008-2020.csv"
-        )
-        st.stop()
-
-    # Load CSVs
     matches = pd.read_csv(DATA_MATCHES)
     balls = pd.read_csv(DATA_BALLS)
 
@@ -50,7 +57,7 @@ def load_data():
     matches.columns = matches.columns.str.strip()
     balls.columns = balls.columns.str.strip()
 
-    # Convert date column
+    # Convert to datetime
     if "date" in matches.columns:
         matches["date"] = pd.to_datetime(matches["date"], errors="ignore")
 
@@ -58,14 +65,20 @@ def load_data():
     if "season" not in matches.columns and "date" in matches.columns:
         matches["season"] = matches["date"].dt.year
 
-    # Add 'is_wicket' column if missing
+    # Add wicket column if missing
     if "is_wicket" not in balls.columns and "dismissal_kind" in balls.columns:
         balls["is_wicket"] = balls["dismissal_kind"].notna().astype(int)
+
+    # Add ball_faced column for strike rate
+    balls["ball_faced"] = 1
+
+    # Add is_four / is_six
+    balls["is_four"] = (balls["batsman_runs"] == 4).astype(int)
+    balls["is_six"] = (balls["batsman_runs"] == 6).astype(int)
 
     return matches, balls
 
 
-# Load data
 matches, balls = load_data()
 
 # ---------------------------------------------
@@ -141,9 +154,6 @@ with tab2:
 with tab3:
     st.title("🏏 Batting Detailed Analysis")
 
-    balls["is_four"] = (balls["batsman_runs"] == 4).astype(int)
-    balls["is_six"] = (balls["batsman_runs"] == 6).astype(int)
-
     boundary = balls.groupby("batsman")[["is_four", "is_six"]].sum().reset_index()
     boundary = boundary.sort_values("is_six", ascending=False)
 
@@ -155,7 +165,6 @@ with tab3:
                  title="Top 20 Four Hitters")
     st.plotly_chart(fig, use_container_width=True)
 
-    balls["ball_faced"] = 1
     sr = balls.groupby("batsman").agg({"batsman_runs": "sum", "ball_faced": "count"}).reset_index()
     sr["strike_rate"] = sr["batsman_runs"] / sr["ball_faced"] * 100
     sr = sr.sort_values("strike_rate", ascending=False)
@@ -179,7 +188,7 @@ with tab4:
         dis.columns = ["dismissal", "count"]
         fig = px.pie(dis, names="dismissal", values="count",
                      title="Types of Dismissals")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     balls["runs_conceded"] = balls["total_runs"]
     eco = balls.groupby("bowler").agg({"runs_conceded": "sum", "ball_faced": "count"}).reset_index()
